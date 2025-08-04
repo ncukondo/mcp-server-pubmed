@@ -12,8 +12,24 @@ MCP server for searching PubMed scientific articles using NCBI E-utilities API.
 
 ## Installation
 
+### Via npx (Recommended)
+
+No installation required! Use directly:
+
 ```bash
-npm install mcp-server-pubmed
+npx @ncukondo/mcp-server-pubmed --email your@email.com
+```
+
+### Global Installation
+
+```bash
+npm install -g @ncukondo/mcp-server-pubmed
+```
+
+### Local Installation
+
+```bash
+npm install @ncukondo/mcp-server-pubmed
 ```
 
 ## Usage with Claude Code
@@ -21,14 +37,14 @@ npm install mcp-server-pubmed
 ### 1. Start the MCP Server
 
 ```bash
-# Basic usage
-npx mcp-server-pubmed
+# Basic usage (email required)
+npx @ncukondo/mcp-server-pubmed --email your@email.com
 
 # With caching
-npx mcp-server-pubmed --cache-dir ./cache --cache-ttl 3600
+npx @ncukondo/mcp-server-pubmed --email your@email.com --cache-dir ./cache --cache-ttl 3600
 
-# With email (NCBI recommended)
-PUBMED_EMAIL=your-email@example.com npx mcp-server-pubmed
+# With environment variables
+PUBMED_EMAIL=your-email@example.com npx @ncukondo/mcp-server-pubmed
 ```
 
 ### 2. Connect with Claude Code
@@ -36,13 +52,13 @@ PUBMED_EMAIL=your-email@example.com npx mcp-server-pubmed
 Start Claude Code and connect to the MCP server:
 
 ```bash
-claude code --mcp mcp-server-pubmed
+claude code --mcp @ncukondo/mcp-server-pubmed
 ```
 
 Or set via environment variable:
 
 ```bash
-export MCP_SERVERS="mcp-server-pubmed"
+export MCP_SERVERS="@ncukondo/mcp-server-pubmed"
 claude code
 ```
 
@@ -57,7 +73,7 @@ Edit Claude Desktop's configuration file (`~/.claude/claude_desktop_config.json`
   "mcpServers": {
     "pubmed": {
       "command": "npx",
-      "args": ["mcp-server-pubmed"],
+      "args": ["@ncukondo/mcp-server-pubmed"],
       "env": {
         "PUBMED_EMAIL": "your-email@example.com"
       }
@@ -74,7 +90,7 @@ Edit Claude Desktop's configuration file (`~/.claude/claude_desktop_config.json`
     "pubmed": {
       "command": "npx",
       "args": [
-        "mcp-server-pubmed",
+        "@ncukondo/mcp-server-pubmed",
         "--cache-dir",
         "./cache",
         "--cache-ttl",
@@ -94,7 +110,7 @@ Edit Claude Desktop's configuration file (`~/.claude/claude_desktop_config.json`
 If you've installed globally:
 
 ```bash
-npm install -g mcp-server-pubmed
+npm install -g @ncukondo/mcp-server-pubmed
 ```
 
 ```json

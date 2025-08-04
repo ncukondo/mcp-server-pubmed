@@ -1,5 +1,5 @@
 {
-  "name": "mcp-server-pubmed",
+  "name": "@ncukondo/mcp-server-pubmed",
   "version": "1.0.0",
   "description": "MCP server for searching PubMed scientific articles",
   "main": "dist/index.js",
@@ -7,6 +7,7 @@
   "bin": {
     "mcp-server-pubmed": "dist/index.js"
   },
+  "preferGlobal": true,
   "files": [
     "dist"
   ],
