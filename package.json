@@ -1,6 +1,6 @@
 {
   "name": "@ncukondo/mcp-server-pubmed",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "MCP server for searching PubMed scientific articles",
   "main": "dist/index.js",
   "type": "module",

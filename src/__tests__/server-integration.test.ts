@@ -42,23 +42,25 @@ describe('Server Integration with Cache Configuration', () => {
         env: { ...process.env }
       });
 
-      serverProcess.stderr?.on('data', (data) => {
-        stderr += data.toString();
+      let stdout = '';
+      
+      serverProcess.stdout?.on('data', (data) => {
+        stdout += data.toString();
         
         // Check if we've received the expected configuration output
-        if (!resolved && stderr.includes('MCP PubMed Server Configuration:') &&
-            stderr.includes(`Email: ${email}`) &&
-            stderr.includes(`Cache Directory: ${testCacheDir}`) &&
-            stderr.includes(`Cache TTL: ${cacheTTL} seconds`)) {
+        if (!resolved && stdout.includes('MCP PubMed Server') &&
+            stdout.includes(`Email: ${email}`) &&
+            stdout.includes(`Cache Directory: ${testCacheDir}`) &&
+            stdout.includes(`Cache TTL: ${cacheTTL} seconds`)) {
           
           resolved = true;
           
           try {
-            expect(stderr).toContain('MCP PubMed Server Configuration:');
-            expect(stderr).toContain(`Email: ${email}`);
-            expect(stderr).toContain(`API Key: Not configured`);
-            expect(stderr).toContain(`Cache Directory: ${testCacheDir}`);
-            expect(stderr).toContain(`Cache TTL: ${cacheTTL} seconds`);
+            expect(stdout).toContain('MCP PubMed Server');
+            expect(stdout).toContain(`Email: ${email}`);
+            expect(stdout).toContain(`API Key: Not configured`);
+            expect(stdout).toContain(`Cache Directory: ${testCacheDir}`);
+            expect(stdout).toContain(`Cache TTL: ${cacheTTL} seconds`);
             resolve();
           } catch (error) {
             reject(error);
@@ -70,6 +72,10 @@ describe('Server Integration with Cache Configuration', () => {
         if (!resolved) {
           reject(new Error(`Server process error: ${error.message}`));
         }
+      });
+
+      serverProcess.stderr?.on('data', (data) => {
+        stderr += data.toString();
       });
 
       serverProcess.on('exit', (code, signal) => {
@@ -81,7 +87,7 @@ describe('Server Integration with Cache Configuration', () => {
       // Timeout after 3 seconds - should be enough to see config output
       setTimeout(() => {
         if (!resolved) {
-          reject(new Error(`Server configuration not displayed within timeout. stderr: ${stderr}`));
+          reject(new Error(`Server configuration not displayed within timeout. stdout: ${stdout}, stderr: ${stderr}`));
         }
       }, 3000);
     });
@@ -91,6 +97,7 @@ describe('Server Integration with Cache Configuration', () => {
     const email = 'test@example.com';
 
     let stderr = '';
+    let stdout = '';
     let resolved = false;
 
     return new Promise<void>((resolve, reject) => {
@@ -102,25 +109,29 @@ describe('Server Integration with Cache Configuration', () => {
         env: { ...process.env }
       });
 
-      serverProcess.stderr?.on('data', (data) => {
-        stderr += data.toString();
+      serverProcess.stdout?.on('data', (data) => {
+        stdout += data.toString();
         
-        if (!resolved && stderr.includes('MCP PubMed Server Configuration:') &&
-            stderr.includes('Cache Directory: Not configured (caching disabled)') &&
-            stderr.includes('Cache TTL:')) {
+        if (!resolved && stdout.includes('MCP PubMed Server') &&
+            stdout.includes('Cache Directory: Not configured (caching disabled)') &&
+            stdout.includes('Cache TTL:')) {
           
           resolved = true;
           
           try {
-            expect(stderr).toContain(`Email: ${email}`);
-            expect(stderr).toContain('API Key: Not configured');
-            expect(stderr).toContain('Cache Directory: Not configured (caching disabled)');
-            expect(stderr).toContain('Cache TTL: 86400 seconds (default)');
+            expect(stdout).toContain(`Email: ${email}`);
+            expect(stdout).toContain('API Key: Not configured');
+            expect(stdout).toContain('Cache Directory: Not configured (caching disabled)');
+            expect(stdout).toContain('Cache TTL: 86400 seconds (default)');
             resolve();
           } catch (error) {
             reject(error);
           }
         }
+      });
+
+      serverProcess.stderr?.on('data', (data) => {
+        stderr += data.toString();
       });
 
       serverProcess.on('error', (error) => {
@@ -137,7 +148,7 @@ describe('Server Integration with Cache Configuration', () => {
 
       setTimeout(() => {
         if (!resolved) {
-          reject(new Error(`Server configuration not displayed within timeout. stderr: ${stderr}`));
+          reject(new Error(`Server configuration not displayed within timeout. stdout: ${stdout}, stderr: ${stderr}`));
         }
       }, 3000);
     });
@@ -149,6 +160,7 @@ describe('Server Integration with Cache Configuration', () => {
     const envCacheTTL = '7200';
 
     let stderr = '';
+    let stdout = '';
     let resolved = false;
 
     return new Promise<void>((resolve, reject) => {
@@ -162,23 +174,27 @@ describe('Server Integration with Cache Configuration', () => {
         }
       });
 
-      serverProcess.stderr?.on('data', (data) => {
-        stderr += data.toString();
+      serverProcess.stdout?.on('data', (data) => {
+        stdout += data.toString();
         
-        if (!resolved && stderr.includes('MCP PubMed Server Configuration:') &&
-            stderr.includes(`Cache Directory: ${envCacheDir}`)) {
+        if (!resolved && stdout.includes('MCP PubMed Server') &&
+            stdout.includes(`Cache Directory: ${envCacheDir}`)) {
           
           resolved = true;
           
           try {
-            expect(stderr).toContain(`Email: ${envEmail}`);
-            expect(stderr).toContain(`Cache Directory: ${envCacheDir}`);
-            expect(stderr).toContain(`Cache TTL: ${envCacheTTL} seconds`);
+            expect(stdout).toContain(`Email: ${envEmail}`);
+            expect(stdout).toContain(`Cache Directory: ${envCacheDir}`);
+            expect(stdout).toContain(`Cache TTL: ${envCacheTTL} seconds`);
             resolve();
           } catch (error) {
             reject(error);
           }
         }
+      });
+
+      serverProcess.stderr?.on('data', (data) => {
+        stderr += data.toString();
       });
 
       serverProcess.on('error', (error) => {
@@ -195,7 +211,7 @@ describe('Server Integration with Cache Configuration', () => {
 
       setTimeout(() => {
         if (!resolved) {
-          reject(new Error(`Server configuration not displayed within timeout. stderr: ${stderr}`));
+          reject(new Error(`Server configuration not displayed within timeout. stdout: ${stdout}, stderr: ${stderr}`));
         }
       }, 3000);
     });
@@ -208,6 +224,7 @@ describe('Server Integration with Cache Configuration', () => {
     const cliCacheDir = join(process.cwd(), 'cli-cache');
 
     let stderr = '';
+    let stdout = '';
     let resolved = false;
 
     return new Promise<void>((resolve, reject) => {
@@ -225,23 +242,27 @@ describe('Server Integration with Cache Configuration', () => {
         }
       });
 
-      serverProcess.stderr?.on('data', (data) => {
-        stderr += data.toString();
+      serverProcess.stdout?.on('data', (data) => {
+        stdout += data.toString();
         
-        if (!resolved && stderr.includes('MCP PubMed Server Configuration:') &&
-            stderr.includes(`Cache Directory: ${cliCacheDir}`)) {
+        if (!resolved && stdout.includes('MCP PubMed Server') &&
+            stdout.includes(`Cache Directory: ${cliCacheDir}`)) {
           
           resolved = true;
           
           try {
-            expect(stderr).toContain(`Email: ${cliEmail}`); // CLI should override env
-            expect(stderr).toContain(`Cache Directory: ${cliCacheDir}`); // CLI should override env
-            expect(stderr).toContain('Cache TTL: 7200 seconds'); // Should use env since CLI not provided
+            expect(stdout).toContain(`Email: ${cliEmail}`); // CLI should override env
+            expect(stdout).toContain(`Cache Directory: ${cliCacheDir}`); // CLI should override env
+            expect(stdout).toContain('Cache TTL: 7200 seconds'); // Should use env since CLI not provided
             resolve();
           } catch (error) {
             reject(error);
           }
         }
+      });
+
+      serverProcess.stderr?.on('data', (data) => {
+        stderr += data.toString();
       });
 
       serverProcess.on('error', (error) => {
@@ -258,7 +279,7 @@ describe('Server Integration with Cache Configuration', () => {
 
       setTimeout(() => {
         if (!resolved) {
-          reject(new Error(`Server configuration not displayed within timeout. stderr: ${stderr}`));
+          reject(new Error(`Server configuration not displayed within timeout. stdout: ${stdout}, stderr: ${stderr}`));
         }
       }, 3000);
     });

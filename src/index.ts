@@ -257,15 +257,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function main() {
-  console.error('MCP PubMed Server Configuration:');
-  console.error(`  Email: ${email}`);
-  console.error(`  API Key: ${apiKey ? 'Configured' : 'Not configured (using default rate limits)'}`);
-  console.error(`  Cache Directory: ${cacheDir || 'Not configured (caching disabled)'}`);
-  console.error(`  Cache TTL: ${cacheTTL ? `${cacheTTL} seconds` : '86400 seconds (default)'}`);
+  const configMessage = `
+  MCP PubMed Server 
+    Configuration:
+      Email: ${email}
+      API Key: ${apiKey ? 'Configured' : 'Not configured (using default rate limits)'}
+      Cache Directory: ${cacheDir || 'Not configured (caching disabled)'}
+      Cache TTL: ${cacheTTL ? `${cacheTTL} seconds` : '86400 seconds (default)'}
+  `;
+  console.log(configMessage);
   
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('MCP PubMed server running on stdio');
+  console.log('MCP PubMed server running on stdio');
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -274,3 +278,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   });
 }
+
+await main();

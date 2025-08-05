@@ -7,10 +7,10 @@ export default defineConfig({
       entry: resolve(__dirname, 'src/index.ts'),
       name: 'MCPServerPubmed',
       fileName: 'index',
-      formats: ['es', 'cjs']
+      formats: ['es']
     },
     rollupOptions: {
-      external: ['@modelcontextprotocol/sdk', 'fs', 'path', 'fs/promises']
+      external: ['fs', 'path', 'fs/promises', 'node:process']
     },
     target: 'node18'
   },
