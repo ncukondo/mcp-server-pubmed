@@ -7,11 +7,13 @@ import { z } from 'zod';
 import { createSearchHandler } from './handlers/search.js';
 import { createFetchSummaryHandler } from './handlers/fetch-summary.js';
 import { createGetFullTextHandler } from './handlers/get-fulltext.js';
+import pkg from '../package.json' with { type: 'json' };
+const { name: serverName, version: serverVersion } = pkg;
 
 const server = new McpServer(
   {
-    name: 'mcp-server-pubmed',
-    version: '1.0.0',
+    name: serverName,
+    version: serverVersion,
   },
   {
     capabilities: {
