@@ -1,16 +1,14 @@
 #!/usr/bin/env node
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
 import { createSearchHandler } from './handlers/search.js';
 import { createFetchSummaryHandler } from './handlers/fetch-summary.js';
 import { createGetFullTextHandler } from './handlers/get-fulltext.js';
 
-const server = new Server(
+const server = new McpServer(
   {
     name: 'mcp-server-pubmed',
     version: '1.0.0',
@@ -18,6 +16,7 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      resources: {},
     },
   }
 );
@@ -79,104 +78,62 @@ const searchHandler = createSearchHandler(pubmedOptions);
 const fetchSummaryHandler = createFetchSummaryHandler(pubmedOptions);
 const getFullTextHandler = createGetFullTextHandler(pubmedOptions);
 
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: [
-      {
-        name: 'search_pubmed',
-        description: 'Search PubMed for scientific articles. ',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: {
-              type: 'string',
-              description: 'Search query for PubMed',
-            },
-            searchOptions: {
-              type: 'object',
-              description: 'Optional search parameters',
-              properties: {
-                retMax: {
-                  type: 'number',
-                  description: 'Maximum number of results to return',
-                },
-                retStart: {
-                  type: 'number',
-                  description: 'Starting index for results',
-                },
-                sort: {
-                  type: 'string',
-                  enum: ['relevance', 'pub_date', 'author', 'journal'],
-                  description: 'Sort order for results',
-                },
-                dateFrom: {
-                  type: 'string',
-                  description: 'Start date filter (YYYY/MM/DD format)',
-                },
-                dateTo: {
-                  type: 'string',
-                  description: 'End date filter (YYYY/MM/DD format)',
-                },
-              },
-            },
-          },
-          required: ['query'],
-        },
-      },
-      {
-        name: 'fetch_summary',
-        description: 'Fetch detailed article information from PubMed using PMIDs. ',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            pmids: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description: 'Array of PubMed IDs (PMIDs) to fetch',
-            },
-          },
-          required: ['pmids'],
-        },
-      },
-      {
-        name: 'get_fulltext',
-        description: 'Get full text content of PubMed articles using PMIDs.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            pmids: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description: 'Array of PubMed IDs (PMIDs) to get full text for',
-            },
-          },
-          required: ['pmids'],
-        },
-      },
-    ],
-  };
-});
-
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  if (request.params.name === 'search_pubmed') {
-    const { query, searchOptions } = request.params.arguments as {
-      query: string;
-      searchOptions?: {
-        retMax?: number;
-        retStart?: number;
-        sort?: 'relevance' | 'pub_date' | 'author' | 'journal';
-        dateFrom?: string;
-        dateTo?: string;
+// Register resources
+server.registerResource(
+  "article",
+  new ResourceTemplate("articles://pmid/{pmid}", {
+    list: undefined
+  }),
+  {
+    title: "PubMed Article",
+    description: "Detailed information about a specific PubMed article"
+  },
+  async (uri, { pmid }) => {
+    try {
+      const articles = await fetchSummaryHandler.fetchSummary([pmid as string]);
+      if (articles.length === 0) {
+        throw new Error(`Article with PMID ${pmid} not found`);
+      }
+      const article = articles[0];
+      return {
+        contents: [{
+          uri: uri.href,
+          text: JSON.stringify(article, null, 2),
+          mimeType: "application/json"
+        }]
       };
-    };
+    } catch (error) {
+      return {
+        contents: [{
+          uri: uri.href,
+          text: `Error fetching article ${pmid}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          mimeType: "text/plain"
+        }]
+      };
+    }
+  }
+);
 
+// Register tools
+server.registerTool(
+  'search_pubmed',
+  {
+    title: 'PubMed Search',
+    description: 'Search PubMed for scientific articles.',
+    inputSchema: {
+      query: z.string().describe('Search query for PubMed'),
+      searchOptions: z.object({
+        retMax: z.number().optional().describe('Maximum number of results to return'),
+        retStart: z.number().optional().describe('Starting index for results'),
+        sort: z.enum(['relevance', 'pub_date', 'author', 'journal']).optional().describe('Sort order for results'),
+        dateFrom: z.string().optional().describe('Start date filter (YYYY/MM/DD format)'),
+        dateTo: z.string().optional().describe('End date filter (YYYY/MM/DD format)'),
+      }).optional().describe('Optional search parameters')
+    }
+  },
+  async ({ query, searchOptions }) => {
     try {
       const results = await searchHandler.search(query, searchOptions);
-      
       return {
         content: [
           {
@@ -196,15 +153,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
   }
+);
 
-  if (request.params.name === 'fetch_summary') {
-    const { pmids } = request.params.arguments as {
-      pmids: string[];
-    };
-
+server.registerTool(
+  'fetch_summary',
+  {
+    title: 'PubMed Article Summary',
+    description: 'Fetch detailed article information from PubMed using PMIDs.',
+    inputSchema: {
+      pmids: z.array(z.string()).describe('Array of PubMed IDs (PMIDs) to fetch')
+    }
+  },
+  async ({ pmids }) => {
     try {
       const results = await fetchSummaryHandler.fetchSummary(pmids);
-      
       return {
         content: [
           {
@@ -224,15 +186,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
   }
+);
 
-  if (request.params.name === 'get_fulltext') {
-    const { pmids } = request.params.arguments as {
-      pmids: string[];
-    };
-
+server.registerTool(
+  'get_fulltext',
+  {
+    title: 'PubMed Full Text',
+    description: 'Get full text content of PubMed articles using PMIDs.',
+    inputSchema: {
+      pmids: z.array(z.string()).describe('Array of PubMed IDs (PMIDs) to get full text for')
+    }
+  },
+  async ({ pmids }) => {
     try {
       const results = await getFullTextHandler.getFullText(pmids);
-      
       return {
         content: [
           {
@@ -252,9 +219,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
   }
+);
 
-  throw new Error(`Unknown tool: ${request.params.name}`);
-});
+
 
 async function main() {
   const configMessage = `

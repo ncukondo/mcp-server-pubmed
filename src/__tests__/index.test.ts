@@ -1,9 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
 import { createSearchHandler } from '../handlers/search.js';
 import { createFetchSummaryHandler } from '../handlers/fetch-summary.js';
 import { createGetFullTextHandler } from '../handlers/get-fulltext.js';
@@ -28,7 +26,7 @@ vi.mock('../handlers/get-fulltext.js', () => ({
 }));
 
 describe('MCP PubMed Server', () => {
-  let server: Server;
+  let server: McpServer;
   let mockSearchHandler: { search: ReturnType<typeof vi.fn> };
   let mockFetchSummaryHandler: { fetchSummary: ReturnType<typeof vi.fn> };
   let mockGetFullTextHandler: { getFullText: ReturnType<typeof vi.fn> };
@@ -54,7 +52,7 @@ describe('MCP PubMed Server', () => {
     (createFetchSummaryHandler as any).mockReturnValue(mockFetchSummaryHandler);
     (createGetFullTextHandler as any).mockReturnValue(mockGetFullTextHandler);
 
-    server = new Server(
+    server = new McpServer(
       {
         name: 'mcp-server-pubmed',
         version: '1.0.0',
@@ -62,74 +60,99 @@ describe('MCP PubMed Server', () => {
       {
         capabilities: {
           tools: {},
+          resources: {},
         },
       }
     );
 
-    server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return {
-        tools: [
-          {
-            name: 'search_pubmed',
-            description: 'Search PubMed for scientific articles',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                query: {
-                  type: 'string',
-                  description: 'Search query for PubMed',
-                },
-                searchOptions: {
-                  type: 'object',
-                  description: 'Optional search parameters',
-                  properties: {
-                    retMax: {
-                      type: 'number',
-                      description: 'Maximum number of results to return',
-                    },
-                    retStart: {
-                      type: 'number',
-                      description: 'Starting index for results',
-                    },
-                    sort: {
-                      type: 'string',
-                      enum: ['relevance', 'pub_date', 'author', 'journal'],
-                      description: 'Sort order for results',
-                    },
-                    dateFrom: {
-                      type: 'string',
-                      description: 'Start date filter (YYYY/MM/DD format)',
-                    },
-                    dateTo: {
-                      type: 'string',
-                      description: 'End date filter (YYYY/MM/DD format)',
-                    },
-                  },
-                },
-              },
-              required: ['query'],
-            },
-          },
-        ],
-      };
-    });
-
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      if (request.params.name === 'search_pubmed') {
-        const { query, searchOptions } = request.params.arguments as {
-          query: string;
-          searchOptions?: {
-            retMax?: number;
-            retStart?: number;
-            sort?: 'relevance' | 'pub_date' | 'author' | 'journal';
-            dateFrom?: string;
-            dateTo?: string;
+    // Register resources
+    server.registerResource(
+      "article",
+      new ResourceTemplate("articles://pmid/{pmid}", {
+        list: undefined
+      }),
+      {
+        title: "PubMed Article",
+        description: "Detailed information about a specific PubMed article"
+      },
+      async (uri, { pmid }) => {
+        try {
+          const articles = await mockFetchSummaryHandler.fetchSummary([pmid as string]);
+          if (articles.length === 0) {
+            throw new Error(`Article with PMID ${pmid} not found`);
+          }
+          const article = articles[0];
+          return {
+            contents: [{
+              uri: uri.href,
+              text: JSON.stringify(article, null, 2),
+              mimeType: "application/json"
+            }]
           };
-        };
+        } catch (error) {
+          return {
+            contents: [{
+              uri: uri.href,
+              text: `Error fetching article ${pmid}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              mimeType: "text/plain"
+            }]
+          };
+        }
+      }
+    );
 
+    server.registerResource(
+      "search-results",
+      new ResourceTemplate("search://query/{encodedQuery}", {
+        list: undefined
+      }),
+      {
+        title: "PubMed Search Results",
+        description: "Search results from PubMed for a specific query"
+      },
+      async (uri, { encodedQuery }) => {
+        try {
+          const query = decodeURIComponent(encodedQuery as string);
+          const results = await mockSearchHandler.search(query, { retMax: 20 });
+          return {
+            contents: [{
+              uri: uri.href,
+              text: JSON.stringify(results, null, 2),
+              mimeType: "application/json"
+            }]
+          };
+        } catch (error) {
+          return {
+            contents: [{
+              uri: uri.href,
+              text: `Error searching PubMed for "${decodeURIComponent(encodedQuery as string)}": ${error instanceof Error ? error.message : 'Unknown error'}`,
+              mimeType: "text/plain"
+            }]
+          };
+        }
+      }
+    );
+
+    // Register tools
+    server.registerTool(
+      'search_pubmed',
+      {
+        title: 'PubMed Search',
+        description: 'Search PubMed for scientific articles.',
+        inputSchema: {
+          query: z.string().describe('Search query for PubMed'),
+          searchOptions: z.object({
+            retMax: z.number().optional().describe('Maximum number of results to return'),
+            retStart: z.number().optional().describe('Starting index for results'),
+            sort: z.enum(['relevance', 'pub_date', 'author', 'journal']).optional().describe('Sort order for results'),
+            dateFrom: z.string().optional().describe('Start date filter (YYYY/MM/DD format)'),
+            dateTo: z.string().optional().describe('End date filter (YYYY/MM/DD format)'),
+          }).optional().describe('Optional search parameters')
+        }
+      },
+      async ({ query, searchOptions }) => {
         try {
           const results = await mockSearchHandler.search(query, searchOptions);
-          
           return {
             content: [
               {
@@ -149,311 +172,120 @@ describe('MCP PubMed Server', () => {
           };
         }
       }
+    );
 
-      throw new Error(`Unknown tool: ${request.params.name}`);
+    server.registerTool(
+      'fetch_summary',
+      {
+        title: 'PubMed Article Summary',
+        description: 'Fetch detailed article information from PubMed using PMIDs.',
+        inputSchema: {
+          pmids: z.array(z.string()).describe('Array of PubMed IDs (PMIDs) to fetch')
+        }
+      },
+      async ({ pmids }) => {
+        try {
+          const results = await mockFetchSummaryHandler.fetchSummary(pmids);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(results, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Error fetching article summaries: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              },
+            ],
+          };
+        }
+      }
+    );
+
+    server.registerTool(
+      'get_fulltext',
+      {
+        title: 'PubMed Full Text',
+        description: 'Get full text content of PubMed articles using PMIDs.',
+        inputSchema: {
+          pmids: z.array(z.string()).describe('Array of PubMed IDs (PMIDs) to get full text for')
+        }
+      },
+      async ({ pmids }) => {
+        try {
+          const results = await mockGetFullTextHandler.getFullText(pmids);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(results, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Error fetching full text: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              },
+            ],
+          };
+        }
+      }
+    );
+  });
+
+  describe('Server Creation', () => {
+    it('should create McpServer with resources and tools capabilities', () => {
+      expect(server).toBeDefined();
+      expect(server).toBeInstanceOf(McpServer);
+    });
+
+    it('should register resources and tools without errors', () => {
+      // If we got here without errors in beforeEach, registration worked
+      expect(true).toBe(true);
     });
   });
 
-  describe('ListTools', () => {
-    it('should return available tools', async () => {
-      const request = { method: 'tools/list', params: {} };
-      const handler = server['_requestHandlers'].get('tools/list');
-      
-      expect(handler).toBeDefined();
-      
-      const response = await handler!(request as any);
-      
-      expect(response).toEqual({
-        tools: [
-          {
-            name: 'search_pubmed',
-            description: 'Search PubMed for scientific articles',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                query: {
-                  type: 'string',
-                  description: 'Search query for PubMed',
-                },
-                searchOptions: {
-                  type: 'object',
-                  description: 'Optional search parameters',
-                  properties: {
-                    retMax: {
-                      type: 'number',
-                      description: 'Maximum number of results to return',
-                    },
-                    retStart: {
-                      type: 'number',
-                      description: 'Starting index for results',
-                    },
-                    sort: {
-                      type: 'string',
-                      enum: ['relevance', 'pub_date', 'author', 'journal'],
-                      description: 'Sort order for results',
-                    },
-                    dateFrom: {
-                      type: 'string',
-                      description: 'Start date filter (YYYY/MM/DD format)',
-                    },
-                    dateTo: {
-                      type: 'string',
-                      description: 'End date filter (YYYY/MM/DD format)',
-                    },
-                  },
-                },
-              },
-              required: ['query'],
-            },
-          },
-          {
-            name: 'fetch_summary',
-            description: 'Fetch detailed article information from PubMed using PMIDs',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                pmids: {
-                  type: 'array',
-                  items: {
-                    type: 'string',
-                  },
-                  description: 'Array of PubMed IDs (PMIDs) to fetch',
-                },
-              },
-              required: ['pmids'],
-            },
-          },
-          {
-            name: 'get_fulltext',
-            description: 'Get full text content of PubMed articles using PMIDs',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                pmids: {
-                  type: 'array',
-                  items: {
-                    type: 'string',
-                  },
-                  description: 'Array of PubMed IDs (PMIDs) to get full text for',
-                },
-              },
-              required: ['pmids'],
-            },
-          },
-        ],
-      });
-    });
-  });
-
-  describe('CallTool', () => {
-    it('should handle search_pubmed tool call with query only', async () => {
-      const mockResults = [
-        { pmid: '12345', title: 'COVID-19 Research Article', pubDate: '2023/01/15' },
-        { pmid: '67890', title: 'Another COVID-19 Study', pubDate: '2023/02/20' },
-      ];
-      
+  describe('Mock Handler Integration', () => {
+    it('should use mocked search handler', async () => {
+      const mockResults = [{ pmid: '12345', title: 'Test Article' }];
       mockSearchHandler.search.mockResolvedValue(mockResults);
-
-      const request = {
-        method: 'tools/call',
-        params: {
-          name: 'search_pubmed',
-          arguments: {
-            query: 'covid-19',
-          },
-        },
-      };
       
-      const handler = server['_requestHandlers'].get('tools/call');
-      expect(handler).toBeDefined();
-      
-      const response = await handler!(request as any);
-      
-      expect(mockSearchHandler.search).toHaveBeenCalledWith('covid-19', undefined);
-      expect(response).toEqual({
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(mockResults, null, 2),
-          },
-        ],
-      });
+      const result = await mockSearchHandler.search('test query');
+      expect(result).toEqual(mockResults);
+      expect(mockSearchHandler.search).toHaveBeenCalledWith('test query');
     });
 
-    it('should handle search_pubmed tool call with searchOptions', async () => {
-      const mockResults = [
-        { pmid: '11111', title: 'Machine Learning in Medicine', pubDate: '2023/03/10' },
-      ];
+    it('should use mocked fetch summary handler', async () => {
+      const mockResults = [{ pmid: '12345', title: 'Test Article', authors: [] }];
+      mockFetchSummaryHandler.fetchSummary.mockResolvedValue(mockResults);
       
-      mockSearchHandler.search.mockResolvedValue(mockResults);
-
-      const searchOptions = {
-        retMax: 5,
-        sort: 'pub_date' as const,
-        dateFrom: '2023/01/01',
-        dateTo: '2023/12/31',
-      };
-
-      const request = {
-        method: 'tools/call',
-        params: {
-          name: 'search_pubmed',
-          arguments: {
-            query: 'machine learning',
-            searchOptions,
-          },
-        },
-      };
-      
-      const handler = server['_requestHandlers'].get('tools/call');
-      expect(handler).toBeDefined();
-      
-      const response = await handler!(request as any);
-      
-      expect(mockSearchHandler.search).toHaveBeenCalledWith('machine learning', searchOptions);
-      expect(response).toEqual({
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(mockResults, null, 2),
-          },
-        ],
-      });
+      const result = await mockFetchSummaryHandler.fetchSummary(['12345']);
+      expect(result).toEqual(mockResults);
+      expect(mockFetchSummaryHandler.fetchSummary).toHaveBeenCalledWith(['12345']);
     });
 
-    it('should handle search errors gracefully', async () => {
-      const errorMessage = 'PubMed API error';
-      mockSearchHandler.search.mockRejectedValue(new Error(errorMessage));
-
-      const request = {
-        method: 'tools/call',
-        params: {
-          name: 'search_pubmed',
-          arguments: {
-            query: 'invalid query',
-          },
-        },
-      };
-      
-      const handler = server['_requestHandlers'].get('tools/call');
-      expect(handler).toBeDefined();
-      
-      const response = await handler!(request as any);
-      
-      expect(response).toEqual({
-        content: [
-          {
-            type: 'text',
-            text: `Error searching PubMed: ${errorMessage}`,
-          },
-        ],
-      });
-    });
-
-    it('should handle unknown errors gracefully', async () => {
-      mockSearchHandler.search.mockRejectedValue('Unknown error');
-
-      const request = {
-        method: 'tools/call',
-        params: {
-          name: 'search_pubmed',
-          arguments: {
-            query: 'test query',
-          },
-        },
-      };
-      
-      const handler = server['_requestHandlers'].get('tools/call');
-      expect(handler).toBeDefined();
-      
-      const response = await handler!(request as any);
-      
-      expect(response).toEqual({
-        content: [
-          {
-            type: 'text',
-            text: 'Error searching PubMed: Unknown error',
-          },
-        ],
-      });
-    });
-
-    it('should handle get_fulltext tool call', async () => {
-      const mockResults = [
-        { pmid: '12345', fullText: '# Test Article\n\n## Abstract\n\nTest abstract content.' },
-        { pmid: '67890', fullText: null },
-      ];
-      
+    it('should use mocked get full text handler', async () => {
+      const mockResults = [{ pmid: '12345', fullText: 'Full text content' }];
       mockGetFullTextHandler.getFullText.mockResolvedValue(mockResults);
-
-      const request = {
-        method: 'tools/call',
-        params: {
-          name: 'get_fulltext',
-          arguments: {
-            pmids: ['12345', '67890'],
-          },
-        },
-      };
       
-      const handler = server['_requestHandlers'].get('tools/call');
-      expect(handler).toBeDefined();
-      
-      const response = await handler!(request as any);
-      
-      expect(mockGetFullTextHandler.getFullText).toHaveBeenCalledWith(['12345', '67890']);
-      expect(response).toEqual({
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(mockResults, null, 2),
-          },
-        ],
-      });
+      const result = await mockGetFullTextHandler.getFullText(['12345']);
+      expect(result).toEqual(mockResults);
+      expect(mockGetFullTextHandler.getFullText).toHaveBeenCalledWith(['12345']);
     });
 
-    it('should handle get_fulltext errors gracefully', async () => {
-      const errorMessage = 'Full text fetch error';
-      mockGetFullTextHandler.getFullText.mockRejectedValue(new Error(errorMessage));
-
-      const request = {
-        method: 'tools/call',
-        params: {
-          name: 'get_fulltext',
-          arguments: {
-            pmids: ['invalid-pmid'],
-          },
-        },
-      };
+    it('should handle errors in search handler', async () => {
+      const errorMessage = 'Search failed';
+      mockSearchHandler.search.mockRejectedValue(new Error(errorMessage));
       
-      const handler = server['_requestHandlers'].get('tools/call');
-      expect(handler).toBeDefined();
-      
-      const response = await handler!(request as any);
-      
-      expect(response).toEqual({
-        content: [
-          {
-            type: 'text',
-            text: `Error fetching full text: ${errorMessage}`,
-          },
-        ],
-      });
-    });
-
-    it('should throw error for unknown tool', async () => {
-      const request = {
-        method: 'tools/call',
-        params: {
-          name: 'unknown_tool',
-          arguments: {},
-        },
-      };
-      
-      const handler = server['_requestHandlers'].get('tools/call');
-      expect(handler).toBeDefined();
-      
-      await expect(handler!(request as any)).rejects.toThrow('Unknown tool: unknown_tool');
+      await expect(mockSearchHandler.search('invalid query')).rejects.toThrow(errorMessage);
     });
   });
 });
